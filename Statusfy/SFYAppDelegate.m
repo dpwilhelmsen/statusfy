@@ -16,7 +16,11 @@ static NSString * const SFYPlayerDockIconPreferenceKey = @"YES";
 
 @property (nonatomic, strong) NSMenuItem *playerStateMenuItem;
 @property (nonatomic, strong) NSMenuItem *dockIconMenuItem;
+@property (nonatomic, strong) NSMenuItem *lastTenStatuses;
 @property (nonatomic, strong) NSStatusItem *statusItem;
+
+@property (nonatomic, strong) NSDictionary *currentTrack;
+@property (nonatomic, strong) NSMutableArray *tracks;
 
 @end
 
@@ -29,6 +33,7 @@ static NSString * const SFYPlayerDockIconPreferenceKey = @"YES";
 
     self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
     self.statusItem.highlightMode = YES;
+    self.tracks = [NSMutableArray array];
 
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
 
@@ -36,40 +41,90 @@ static NSString * const SFYPlayerDockIconPreferenceKey = @"YES";
 
     self.dockIconMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Hide Dock Icon", nil) action:@selector(toggleDockIconVisibility) keyEquivalent:@""];
 
+    self.lastTenStatuses = [[NSMenuItem alloc]
+                             initWithTitle: NSLocalizedString(@"Last 10 Tracks", nil)
+                             action: nil
+                             keyEquivalent:@""];
+
     [menu addItem:self.playerStateMenuItem];
     [menu addItem:self.dockIconMenuItem];
+    [menu addItem:self.lastTenStatuses];
     [menu addItemWithTitle:NSLocalizedString(@"Quit", nil) action:@selector(quit) keyEquivalent:@"q"];
 
     [self.statusItem setMenu:menu];
 
-    [self setStatusItemTitle];
-    [NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(setStatusItemTitle) userInfo:nil repeats:YES];
+    [self updateStatuses];
+    [NSTimer scheduledTimerWithTimeInterval:10 target:self selector:@selector(updateStatuses) userInfo:nil repeats:YES];
 }
 
 #pragma mark - Setting title text
 
-- (void)setStatusItemTitle
+- (void)updateStatuses
 {
-    NSString *trackName = [[self executeAppleScript:@"get name of current track"] stringValue];
-    NSString *artistName = [[self executeAppleScript:@"get artist of current track"] stringValue];
+    // Query spotify via applescript
+    NSString *trackId = [[self executeAppleScript:@"get id of current track"] stringValue];
+    NSString *trackTitle = [[self executeAppleScript:@"get name of current track"] stringValue];
+    NSString *trackArtist = [[self executeAppleScript:@"get artist of current track"] stringValue];
 
-    if (trackName && artistName) {
-        NSString *titleText = [NSString stringWithFormat:@"%@ - %@", trackName, artistName];
-
-        if ([self getPlayerStateVisibility]) {
-            NSString *playerState = [self determinePlayerStateText];
-            titleText = [NSString stringWithFormat:@"%@ (%@)", titleText, playerState];
-        }
-
-        self.statusItem.image = nil;
-        self.statusItem.title = titleText;
-    }
-    else {
+    // Set default status if no track is found
+    if (trackId == nil || trackTitle == nil || trackArtist == nil ) {
         NSImage *image = [NSImage imageNamed:@"status_icon"];
         [image setTemplate:true];
         self.statusItem.image = image;
         self.statusItem.title = nil;
+        return;
     }
+
+    // Build Track Dictionary
+    self.currentTrack = @{
+                          @"id" : trackId,
+                          @"title" : trackTitle,
+                          @"artist" : trackArtist,
+                          @"displayText" : [NSString stringWithFormat:@"%@ - %@", trackTitle, trackArtist]
+                          };
+
+    // Set status
+    self.statusItem.image = nil;
+    if ([self getPlayerStateVisibility]) {
+        self.statusItem.title = [NSString stringWithFormat:@"%@ (%@)", self.currentTrack[@"displayText"], [self determinePlayerStateText]];
+    } else {
+        self.statusItem.title = self.currentTrack[@"displayText"];
+    }
+
+    // Add if first run
+    if (self.tracks.count == 0) {
+        [self.tracks addObject:self.currentTrack];
+    }
+
+    // Add track if not duplicate (due to polling instead of event based)
+    if (![[self.tracks lastObject] isEqualToDictionary: self.currentTrack]) {
+        [self.tracks addObject:self.currentTrack];
+    }
+
+    // Clean up if over 10
+    if (self.tracks.count > 10) {
+        [self.tracks removeObjectAtIndex: 0];
+    }
+
+    // Populate submenu
+    NSMenu *lastTenSubmenu = [[NSMenu alloc] init];
+
+    for (id track in [[self.tracks reverseObjectEnumerator] allObjects]) {
+        NSString *command = [NSString stringWithFormat:@"play track \"%@\"", track[@"id"]];
+
+        NSMenuItem *trackMenuItem = [[NSMenuItem alloc] initWithTitle:track[@"displayText"] action: nil keyEquivalent:@""];
+        [trackMenuItem setRepresentedObject:command];
+        [trackMenuItem setAction:@selector(trackMenuItemClicker:)];
+        [lastTenSubmenu addItem:trackMenuItem];
+    }
+
+    [self.lastTenStatuses setSubmenu:lastTenSubmenu];
+}
+
+#pragma mark - Execute Menu Item Click
+- (IBAction)trackMenuItemClicker:(id)sender
+{
+    [self executeAppleScript: [sender representedObject]];
 }
 
 #pragma mark - Executing AppleScript
