@@ -32,6 +32,8 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>com.apple.systemevents</string>
 	<key>LSUIElement</key>
 	<string>1</string>
 </dict>

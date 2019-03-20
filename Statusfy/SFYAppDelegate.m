@@ -54,7 +54,7 @@ static NSString * const SFYPlayerDockIconPreferenceKey = @"YES";
     [self.statusItem setMenu:menu];
 
     [self updateStatuses];
-    [NSTimer scheduledTimerWithTimeInterval:10 target:self selector:@selector(updateStatuses) userInfo:nil repeats:YES];
+    [NSTimer scheduledTimerWithTimeInterval:5 target:self selector:@selector(updateStatuses) userInfo:nil repeats:YES];
 }
 
 #pragma mark - Setting title text
@@ -74,6 +74,8 @@ static NSString * const SFYPlayerDockIconPreferenceKey = @"YES";
         self.statusItem.title = nil;
         return;
     }
+
+    // TODO break if ad is playing
 
     // Build Track Dictionary
     self.currentTrack = @{
